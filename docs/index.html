@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>Private Chat Admin</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">MongoDB message console</p>
+        <h1>Private Chat</h1>
+        <p class="subtitle">Write and manage messages shared with your VS Code extension.</p>
+      </div>
+      <div class="header-actions">
+        <span class="status" id="status">Not configured</span>
+        <button class="secondary" id="open-settings" type="button">Connection</button>
+      </div>
+    </header>
+
+    <section class="card connection" id="connection-panel" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Browser configuration</p>
+          <h2>Connection</h2>
+        </div>
+        <button class="icon-button" id="close-settings" type="button" aria-label="Close connection settings">Close</button>
+      </div>
+
+      <label for="connection-mode">Connection mode</label>
+      <select id="connection-mode">
+        <option value="rest">Hosted REST API</option>
+        <option value="atlas">Atlas Data API (legacy only)</option>
+      </select>
+
+      <div id="rest-fields">
+        <label for="api-base-url">API base URL</label>
+        <input id="api-base-url" type="url" placeholder="https://your-private-chat-api.example.com">
+        <p class="help">Use the deployed URL for this project's Express server. Do not include <code>/api/messages</code>.</p>
+      </div>
+
+      <div id="atlas-fields" hidden>
+        <label for="atlas-base-url">Legacy Atlas Data API URL</label>
+        <input id="atlas-base-url" type="url" placeholder="https://...mongodb-api.com/app/.../endpoint/data/v1">
+
+        <label for="atlas-api-key">Atlas API key</label>
+        <input id="atlas-api-key" type="password" autocomplete="off" placeholder="API key">
+
+        <div class="field-grid">
+          <div>
+            <label for="atlas-data-source">Data source</label>
+            <input id="atlas-data-source" value="Cluster0">
+          </div>
+          <div>
+            <label for="atlas-database">Database</label>
+            <input id="atlas-database" value="private_chat">
+          </div>
+          <div>
+            <label for="atlas-collection">Collection</label>
+            <input id="atlas-collection" value="messages">
+          </div>
+        </div>
+        <p class="warning">Atlas Data API is retired and only works if your project already has an active legacy endpoint.</p>
+      </div>
+
+      <div class="actions end">
+        <button class="danger ghost" id="forget-settings" type="button">Forget</button>
+        <button id="save-settings" type="button">Save and test</button>
+      </div>
+      <p class="help">Configuration is stored in this browser's local storage.</p>
+    </section>
+
+    <section class="card composer">
+      <label for="message-input">New message</label>
+      <textarea id="message-input" rows="4" placeholder="Write a message for the VS Code extension..."></textarea>
+      <div class="actions">
+        <span class="help">Ctrl/Command + Enter to post</span>
+        <button id="send" type="button">Post message</button>
+      </div>
+    </section>
+
+    <section class="card list">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Shared collection</p>
+          <h2>Messages <span id="message-count" class="count">0</span></h2>
+        </div>
+        <div class="actions compact">
+          <button id="clear-all" class="danger ghost" type="button">Clear all</button>
+          <button id="refresh" class="secondary" type="button">Refresh</button>
+        </div>
+      </div>
+      <div id="messages" class="messages" aria-live="polite"></div>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
