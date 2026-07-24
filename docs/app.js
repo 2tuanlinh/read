@@ -9,6 +9,7 @@ const elements = {
   refresh: document.getElementById('refresh'),
   clearAll: document.getElementById('clear-all'),
   panel: document.getElementById('connection-panel'),
+  sharedConnection: document.getElementById('shared-connection'),
   mode: document.getElementById('connection-mode'),
   restFields: document.getElementById('rest-fields'),
   atlasFields: document.getElementById('atlas-fields'),
@@ -33,6 +34,19 @@ function loadConfiguration() {
 
 function normalizeUrl(value) {
   return value.trim().replace(/\/+$/, '');
+}
+
+function parseSharedConnection(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value.trim());
+  } catch {
+    throw new Error('Shared connection string must be valid JSON.');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Shared connection string must be a JSON object.');
+  }
+  return parsed;
 }
 
 function objectId(value) {
@@ -344,6 +358,7 @@ function updateModeFields() {
 
 function populateForm() {
   const value = configuration || {};
+  elements.sharedConnection.value = value.sharedConnection || '';
   elements.mode.value = value.mode || 'rest';
   elements.apiBaseUrl.value = value.apiBaseUrl || '';
   elements.atlasBaseUrl.value = value.atlasBaseUrl || '';
@@ -355,6 +370,29 @@ function populateForm() {
 }
 
 function readForm() {
+  const sharedValue = elements.sharedConnection.value.trim();
+  if (sharedValue) {
+    const shared = parseSharedConnection(sharedValue);
+    const apiBaseUrl = typeof shared.API_BASE_URL === 'string' ? normalizeUrl(shared.API_BASE_URL) : '';
+    const mongodbUri = typeof shared.MONGODB_URI === 'string' ? shared.MONGODB_URI.trim() : '';
+    const database = typeof shared.MONGODB_DATABASE === 'string' ? shared.MONGODB_DATABASE.trim() : '';
+    const collection = typeof shared.MONGODB_COLLECTION === 'string' ? shared.MONGODB_COLLECTION.trim() : '';
+    const corsOrigin = typeof shared.CORS_ORIGIN === 'string' ? shared.CORS_ORIGIN.trim() : '';
+    if (!mongodbUri.startsWith('mongodb://') && !mongodbUri.startsWith('mongodb+srv://')) {
+      throw new Error('MONGODB_URI must start with mongodb:// or mongodb+srv://.');
+    }
+    if (!apiBaseUrl) {
+      throw new Error('The shared connection string needs API_BASE_URL for GitHub Pages.');
+    }
+    if (!database || !collection) {
+      throw new Error('MONGODB_DATABASE and MONGODB_COLLECTION are required.');
+    }
+    if (!corsOrigin) {
+      throw new Error('CORS_ORIGIN is required.');
+    }
+    return { mode: 'rest', apiBaseUrl, sharedConnection: sharedValue };
+  }
+
   const mode = elements.mode.value;
   if (mode === 'rest') {
     const apiBaseUrl = normalizeUrl(elements.apiBaseUrl.value);

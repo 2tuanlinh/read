@@ -54,6 +54,9 @@ label { display: block; margin: 14px 0 7px; color: #bac4d1; font-size: 13px; fon
 input, select, textarea { width: 100%; border: 1px solid var(--border); border-radius: 9px; outline: none; background: var(--input); color: var(--text); padding: 11px 12px; }
 input:focus, select:focus, textarea:focus { border-color: #3e9b76; box-shadow: 0 0 0 3px rgba(102, 217, 166, 0.09); }
 textarea { min-height: 116px; resize: vertical; line-height: 1.5; }
+.connection-string { min-height: 138px; font: 12px/1.55 Consolas, monospace; }
+.advanced { margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--border); }
+.advanced summary { color: var(--muted); cursor: pointer; font-size: 13px; }
 .field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .actions { justify-content: space-between; margin-top: 12px; }
 .actions.end { justify-content: flex-end; }

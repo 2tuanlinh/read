@@ -37,6 +37,21 @@ It has no build step and uses relative asset URLs, so it works at a GitHub Pages
 
 Open **Connection** in the website and select one mode.
 
+## One Shared Connection String
+
+Use one JSON string for the website, extension, and server deployment reference:
+
+```json
+{"MONGODB_URI":"mongodb+srv://USERNAME:PASSWORD@YOUR_CLUSTER.mongodb.net","MONGODB_DATABASE":"private_chat","MONGODB_COLLECTION":"messages","CORS_ORIGIN":"https://YOUR_USER.github.io","API_BASE_URL":"https://YOUR_API_HOST.example.com"}
+```
+
+Paste the complete single-line string in two places:
+
+1. Website: **Connection > Shared connection string > Save and test**.
+2. VS Code: run **Private Chat: Configure MongoDB** and paste the same string.
+
+The extension uses `MONGODB_URI`, `MONGODB_DATABASE`, and `MONGODB_COLLECTION`. The website uses `API_BASE_URL`. Your API host uses the first four values as environment variables. The API host still requires setting its environment variables through Render, Railway, or another deployment platform; a browser cannot configure server environment variables.
+
 ### Hosted REST API
 
 This is the working option for new MongoDB Atlas projects. Deploy `server.js` to a Node host such as Render or Railway, then enter its public URL in the static website.
