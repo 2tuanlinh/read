@@ -1,123 +1,38 @@
-# Private Chat Web Admin
+# Private Chat Manager
 
-A static HTML/CSS/JavaScript manager for messages shared with the Private Chat VS Code extension. GitHub Pages publishes the files in `docs/`.
+A responsive Next.js application for managing messages in a user-provided MongoDB database. It is designed for one-click deployment to Vercel.
 
-## Message Schema
+## Behavior
 
-The website and extension use the same MongoDB collection and document shape:
+- The MongoDB URI acts as the login credential.
+- The URI is stored in that browser's `localStorage` until logout.
+- Users can log out and connect with a different URI.
+- The URI is sent to same-origin Next.js API routes for each database operation.
+- The fixed database and collection are `private_chat.messages`.
+- Messages use the schema `{ _id: ObjectId, text: string, createdAt: Date }`, matching the VS Code extension.
 
-```json
-{
-  "_id": "ObjectId",
-  "text": "message content",
-  "createdAt": "Date"
-}
-```
+This design intentionally prioritizes convenience over secret security. A MongoDB URI stored in browser storage can be read by JavaScript running on the site.
 
-Defaults:
-
-- Database: `private_chat`
-- Collection: `messages`
-
-## Static Website
-
-The deployable website is entirely contained in:
-
-```text
-docs/
-  .nojekyll
-  index.html
-  styles.css
-  app.js
-```
-
-It has no build step and uses relative asset URLs, so it works at a GitHub Pages repository URL.
-
-## Connection Modes
-
-Open **Connection** in the website and select one mode.
-
-## One Shared Connection String
-
-Use one JSON string for the website, extension, and server deployment reference:
-
-```json
-{"MONGODB_URI":"mongodb+srv://USERNAME:PASSWORD@YOUR_CLUSTER.mongodb.net","MONGODB_DATABASE":"private_chat","MONGODB_COLLECTION":"messages","CORS_ORIGIN":"https://YOUR_USER.github.io","API_BASE_URL":"https://YOUR_API_HOST.example.com"}
-```
-
-Paste the complete single-line string in two places:
-
-1. Website: **Connection > Shared connection string > Save and test**.
-2. VS Code: run **Private Chat: Configure MongoDB** and paste the same string.
-
-The extension uses `MONGODB_URI`, `MONGODB_DATABASE`, and `MONGODB_COLLECTION`. The website uses `API_BASE_URL`. Your API host uses the first four values as environment variables. The API host still requires setting its environment variables through Render, Railway, or another deployment platform; a browser cannot configure server environment variables.
-
-### Hosted REST API
-
-This is the working option for new MongoDB Atlas projects. Deploy `server.js` to a Node host such as Render or Railway, then enter its public URL in the static website.
-
-Example:
-
-```text
-https://private-chat-api.example.com
-```
-
-The website appends `/api/health` and `/api/messages` itself.
-
-Configure the Node host with:
-
-```dotenv
-MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@YOUR_CLUSTER.mongodb.net
-MONGODB_DATABASE=private_chat
-MONGODB_COLLECTION=messages
-PORT=3000
-CORS_ORIGIN=https://YOUR_USER.github.io
-```
-
-For unrestricted personal testing, `CORS_ORIGIN=*` also works.
-
-### Atlas Data API (Legacy)
-
-This mode directly calls the old Atlas Data API from browser JavaScript. MongoDB retired Atlas Data API and App Services HTTPS endpoints, so this option only works for an Atlas project that already has an active legacy endpoint.
-
-The website stores the entered endpoint and API key in browser `localStorage`. They are not committed to this repository, but JavaScript running on the page can access them.
-
-## Local Run
-
-Create `.env` from `.env.example`, set the MongoDB URI, then run:
+## Local Development
 
 ```powershell
 npm install
-npm start
+npm run dev
 ```
 
-Open `http://localhost:3000`, select **Hosted REST API**, and enter:
+Open `http://localhost:3000` and enter a MongoDB URI.
 
-```text
-http://localhost:3000
-```
-
-## Deploy GitHub Pages
+## Deploy To Vercel
 
 1. Push this project to a GitHub repository.
-2. Open repository **Settings > Pages**.
-3. Choose **Deploy from a branch**.
-4. Select the branch containing this project, usually `main`.
-5. Select the `/docs` folder and save.
-6. Open `https://YOUR_USER.github.io/REPOSITORY/`.
-7. Open **Connection** and enter the deployed REST API URL or an existing legacy Atlas Data API configuration.
+2. Open [vercel.com](https://vercel.com) and select **Add New > Project**.
+3. Import the GitHub repository.
+4. Keep the detected framework as **Next.js**.
+5. Do not add environment variables; users provide their own URI in the app.
+6. Select **Deploy**.
 
-## API
+Vercel runs the frontend and all `/api/*` route handlers in the same project.
 
-- `GET /api/health`
-- `GET /api/messages`
-- `POST /api/messages` with `{ "text": "..." }`
-- `PATCH /api/messages/:id` with `{ "text": "..." }`
-- `DELETE /api/messages/:id`
-- `DELETE /api/messages`
+## MongoDB Atlas Access
 
-## VS Code Extension
-
-Configure the extension with the same MongoDB URI, database, and collection. The extension reads documents created by the website because both use actual MongoDB `ObjectId` and `Date` values.
-
-The extension currently reloads messages when its view renders; it does not subscribe to live database changes.
+The Atlas cluster must permit connections from Vercel. In Atlas **Network Access**, allow the required source addresses. Vercel serverless outbound addresses are dynamic unless configured otherwise, so unrestricted `0.0.0.0/0` access is the simplest but least secure option.
