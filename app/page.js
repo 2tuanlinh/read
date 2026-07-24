@@ -14,7 +14,11 @@ function Icon({ name }) {
     trash: <><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 15H6L5 6"/></>,
     message: <><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></>,
     shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></>,
-    eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></>
+    eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></>,
+    search: <><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></>,
+    more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
+    close: <><path d="M18 6L6 18M6 6l12 12"/></>,
+    check: <><path d="M20 6L9 17l-5-5"/></>
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24">{paths[name]}</svg>;
 }
@@ -23,8 +27,14 @@ function timeLabel(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Unknown time';
   return new Intl.DateTimeFormat(undefined, {
-    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   }).format(date);
+}
+
+function connectionLabel(uri) {
+  const match = uri.match(/@([^/?]+)/);
+  if (match) return match[1];
+  return uri.replace(/^mongodb(?:\+srv)?:\/\//, '').split('/')[0].replace(/^[^@]+@/, '') || 'MongoDB';
 }
 
 export default function Home() {
@@ -34,10 +44,16 @@ export default function Home() {
   const [showUri, setShowUri] = useState(false);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
+  const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [openMenu, setOpenMenu] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [syncState, setSyncState] = useState('idle');
+  const [lastSynced, setLastSynced] = useState(null);
   const [error, setError] = useState('');
+  const [toast, setToast] = useState(null);
 
   async function api(path, options = {}, activeUri = uri) {
     const response = await fetch(path, {
@@ -53,10 +69,22 @@ export default function Home() {
     return data;
   }
 
-  async function loadMessages(activeUri = uri) {
-    setError('');
-    const result = await api('/api/messages', {}, activeUri);
-    setMessages(result.messages || []);
+  async function loadMessages(activeUri = uri, quiet = false) {
+    if (!quiet) setError('');
+    setSyncState('loading');
+    try {
+      const result = await api('/api/messages', {}, activeUri);
+      setMessages(result.messages || []);
+      setLastSynced(new Date());
+      setSyncState('success');
+    } catch (loadError) {
+      setSyncState('error');
+      throw loadError;
+    }
+  }
+
+  function notify(message, type = 'success') {
+    setToast({ message, type });
   }
 
   useEffect(() => {
@@ -64,19 +92,23 @@ export default function Home() {
     setUri(saved);
     setUriInput(saved);
     setReady(true);
-    if (saved) {
-      loadMessages(saved).catch((loadError) => setError(loadError.message));
-    }
+    if (saved) loadMessages(saved).catch((loadError) => setError(loadError.message));
   }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   async function login(event) {
     event.preventDefault();
     const value = uriInput.trim();
     if (!value.startsWith('mongodb://') && !value.startsWith('mongodb+srv://')) {
-      setError('Enter a valid mongodb:// or mongodb+srv:// connection URI.');
+      setError('Enter a valid MongoDB connection URI.');
       return;
     }
-    setBusy(true);
+    setBusy('login');
     setError('');
     try {
       await api('/api/health', {}, value);
@@ -86,7 +118,7 @@ export default function Home() {
     } catch (loginError) {
       setError(loginError.message);
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   }
 
@@ -96,19 +128,22 @@ export default function Home() {
     setUriInput('');
     setMessages([]);
     setDraft('');
+    setQuery('');
     setEditing(null);
     setError('');
   }
 
-  async function run(action) {
-    setBusy(true);
+  async function run(name, action, successMessage) {
+    setBusy(name);
     setError('');
     try {
       await action();
+      if (successMessage) notify(successMessage);
     } catch (actionError) {
       setError(actionError.message);
+      notify(actionError.message, 'error');
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   }
 
@@ -116,145 +151,161 @@ export default function Home() {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    await run(async () => {
-      await api('/api/messages', { method: 'POST', body: JSON.stringify({ text }) });
+    await run('create', async () => {
+      const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ text }) });
+      setMessages((current) => [result.message, ...current]);
       setDraft('');
-      await loadMessages();
-    });
+      setLastSynced(new Date());
+      setSyncState('success');
+    }, 'Message added');
   }
 
   async function saveEdit(id) {
     const text = editText.trim();
     if (!text) return;
-    await run(async () => {
-      await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ text }) });
+    await run(`edit-${id}`, async () => {
+      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ text }) });
+      setMessages((current) => current.map((message) => message.id === id ? result.message : message));
       setEditing(null);
-      await loadMessages();
-    });
+      setLastSynced(new Date());
+      setSyncState('success');
+    }, 'Message updated');
   }
 
-  async function deleteMessage(id) {
-    if (!window.confirm('Delete this message permanently?')) return;
-    await run(async () => {
-      await api(`/api/messages/${id}`, { method: 'DELETE' });
-      await loadMessages();
-    });
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const target = pendingDelete;
+    await run('delete', async () => {
+      if (target === 'all') {
+        await api('/api/messages', { method: 'DELETE' });
+        setMessages([]);
+      } else {
+        await api(`/api/messages/${target}`, { method: 'DELETE' });
+        setMessages((current) => current.filter((message) => message.id !== target));
+      }
+      setPendingDelete(null);
+      setOpenMenu(null);
+      setLastSynced(new Date());
+      setSyncState('success');
+    }, target === 'all' ? 'All messages deleted' : 'Message deleted');
   }
 
-  async function clearAll() {
-    if (!messages.length || !window.confirm(`Delete all ${messages.length} messages permanently?`)) return;
-    await run(async () => {
-      await api('/api/messages', { method: 'DELETE' });
-      await loadMessages();
-    });
-  }
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredMessages = normalizedQuery
+    ? messages.filter((message) => message.text.toLocaleLowerCase().includes(normalizedQuery))
+    : messages;
+  const networkActive = Boolean(busy) || syncState === 'loading';
+  const operationLabels = { create: 'Adding message...', delete: 'Deleting...' };
+  const syncLabel = busy.startsWith('edit-')
+    ? 'Saving message...'
+    : operationLabels[busy] || (syncState === 'loading'
+    ? 'Syncing...'
+    : syncState === 'error'
+      ? 'Sync failed'
+      : lastSynced
+        ? `Up to date · ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : 'Not synced');
 
-  if (!ready) return <div className="boot">Opening console...</div>;
+  if (!ready) return <div className="boot"><span className="spinner" />Loading</div>;
 
   if (!uri) {
     return (
       <main className="login-page">
-        <div className="ambient ambient-one" />
-        <div className="ambient ambient-two" />
         <section className="login-card">
-          <div className="brand-mark"><Icon name="message" /></div>
-          <p className="kicker">Private workspace</p>
-          <h1>Your messages.<br /><span>Your database.</span></h1>
-          <p className="login-copy">Connect directly to your MongoDB cluster and manage the messages used by your Private Chat extension.</p>
-
+          <div className="login-brand"><span className="brand-icon"><Icon name="message" /></span><span>Private Chat</span></div>
+          <div className="login-heading">
+            <h1>Connect your database</h1>
+            <p>Use the MongoDB connection URI configured in your VS Code extension.</p>
+          </div>
           <form onSubmit={login}>
-            <label htmlFor="mongo-uri">MongoDB connection URI</label>
+            <label htmlFor="mongo-uri">MongoDB URI</label>
             <div className="uri-field">
               <Icon name="database" />
-              <input
-                id="mongo-uri"
-                type={showUri ? 'text' : 'password'}
-                value={uriInput}
-                onChange={(event) => setUriInput(event.target.value)}
-                placeholder="mongodb+srv://user:password@cluster..."
-                autoComplete="off"
-                autoFocus
-              />
-              <button type="button" className="eye-button" onClick={() => setShowUri(!showUri)} aria-label="Toggle URI visibility"><Icon name="eye" /></button>
+              <input id="mongo-uri" type={showUri ? 'text' : 'password'} value={uriInput} onChange={(event) => setUriInput(event.target.value)} placeholder="mongodb+srv://user:password@cluster..." autoComplete="off" autoFocus />
+              <button type="button" className="icon-button" onClick={() => setShowUri(!showUri)} aria-label="Toggle URI visibility"><Icon name="eye" /></button>
             </div>
             {error && <p className="form-error">{error}</p>}
-            <button className="primary login-button" disabled={busy} type="submit">
-              {busy ? 'Testing connection...' : 'Connect to database'}
+            <button className="button button-primary login-button" disabled={busy === 'login'} type="submit">
+              {busy === 'login' && <span className="spinner" />}{busy === 'login' ? 'Connecting...' : 'Connect'}
             </button>
           </form>
-
-          <div className="privacy-note"><Icon name="shield" /><span>Your URI is saved in this browser until you log out. It is never stored in this project.</span></div>
-          <p className="database-note">Uses <code>private_chat.messages</code></p>
+          <div className="login-details">
+            <div><span>Database</span><code>private_chat</code></div>
+            <div><span>Collection</span><code>messages</code></div>
+          </div>
+          <p className="privacy-note"><Icon name="shield" />The URI is stored only in this browser until you disconnect.</p>
         </section>
       </main>
     );
   }
 
   return (
-    <div className="dashboard">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark small"><Icon name="message" /></span><strong>Private Chat</strong></div>
-        <nav><span className="nav-item active"><Icon name="message" />Messages</span></nav>
-        <div className="sidebar-bottom">
-          <div className="connection-state"><span className="pulse" /><div><strong>Connected</strong><small>private_chat.messages</small></div></div>
-          <button className="logout-button" onClick={logout}><Icon name="logout" />Log out</button>
+    <div className="app-shell" onClick={() => openMenu && setOpenMenu(null)}>
+      <header className="app-header">
+        <div className="header-inner">
+          <div className="brand"><span className="brand-icon"><Icon name="message" /></span><strong>Private Chat</strong></div>
+          <div className="header-actions">
+            <span className="connection"><i /> <span>{connectionLabel(uri)}</span></span>
+            <button className="button button-quiet" disabled={busy === 'refresh'} onClick={() => run('refresh', () => loadMessages(), 'Messages refreshed')}>{busy === 'refresh' ? <span className="spinner" /> : <Icon name="refresh" />}<span>{busy === 'refresh' ? 'Refreshing' : 'Refresh'}</span></button>
+            <button className="button button-quiet" onClick={logout}><Icon name="logout" /><span>Disconnect</span></button>
+          </div>
         </div>
-      </aside>
+      </header>
+      {networkActive && <div className="network-progress" role="progressbar" aria-label="API request in progress"><span /></div>}
 
-      <main className="main-panel">
-        <header className="topbar">
-          <div><p className="kicker">Database console</p><h1>Messages</h1><p>Manage everything shared with your VS Code extension.</p></div>
-          <button className="refresh-button" disabled={busy} onClick={() => run(loadMessages)}><Icon name="refresh" />Refresh</button>
-        </header>
+      <main className="content">
+        <div className="page-heading">
+          <div><h1>Messages</h1><p>Messages shared with your VS Code extension.</p></div>
+          <div className="page-status"><span className={`sync-status ${syncState}`}>{networkActive && <span className="spinner" />}{!networkActive && syncState === 'success' && <Icon name="check" />}{!networkActive && syncState === 'error' && <Icon name="close" />}{syncLabel}</span><span className="message-count">{messages.length} {messages.length === 1 ? 'message' : 'messages'}</span></div>
+        </div>
 
-        {error && <div className="alert"><strong>Connection error</strong><span>{error}</span></div>}
+        {error && <div className="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><Icon name="close" /></button></div>}
 
-        <section className="composer panel">
-          <div className="panel-heading"><div><h2>New message</h2><p>Publish a note to your shared collection.</p></div><span className="count-badge">{messages.length} total</span></div>
-          <form onSubmit={createMessage}>
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                  event.preventDefault();
-                  event.currentTarget.form.requestSubmit();
-                }
-              }}
-              placeholder="Write something worth remembering..."
-            />
-            <div className="composer-footer"><span><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to send</span><button className="primary" disabled={busy || !draft.trim()} type="submit"><Icon name="send" />Post message</button></div>
-          </form>
-        </section>
+        <form className="composer" onSubmit={createMessage}>
+          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault();
+              event.currentTarget.form.requestSubmit();
+            }
+          }} placeholder="Write a message..." />
+          <div className="composer-bar"><span><kbd>Ctrl</kbd><span>+</span><kbd>Enter</kbd></span><button className="button button-primary" disabled={busy === 'create' || !draft.trim()} type="submit">{busy === 'create' ? <span className="spinner" /> : <Icon name="send" />}Add message</button></div>
+        </form>
 
         <section className="message-section">
-          <div className="list-heading"><div><h2>Message history</h2><p>Newest messages appear first.</p></div><button className="clear-button" disabled={busy || !messages.length} onClick={clearAll}><Icon name="trash" />Clear all</button></div>
+          <div className="toolbar">
+            <div className="search-field"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search messages" aria-label="Search messages" />{query && <button onClick={() => setQuery('')} aria-label="Clear search"><Icon name="close" /></button>}</div>
+            <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>
+          </div>
 
           <div className="message-list">
-            {!messages.length && <div className="empty-state"><span><Icon name="message" /></span><h3>No messages yet</h3><p>Your first message will appear here.</p></div>}
-            {messages.map((message, index) => (
-              <article className="message-card" key={message.id}>
-                <div className="message-index">{String(messages.length - index).padStart(2, '0')}</div>
-                <div className="message-body">
+            {!filteredMessages.length && (
+              <div className="empty-state"><Icon name={query ? 'search' : 'message'} /><h2>{query ? 'No matching messages' : 'No messages yet'}</h2><p>{query ? 'Try a different search term.' : 'Add a message to get started.'}</p></div>
+            )}
+            {filteredMessages.map((message) => (
+              <article className="message-row" key={message.id}>
+                <div className="message-main">
                   {editing === message.id ? (
                     <textarea className="edit-textarea" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus />
                   ) : <p>{message.text}</p>}
                   <time>{timeLabel(message.createdAt)}</time>
                 </div>
-                <div className="message-actions">
-                  {editing === message.id ? <>
-                    <button className="text-button" onClick={() => setEditing(null)}>Cancel</button>
-                    <button className="save-button" disabled={busy} onClick={() => saveEdit(message.id)}>Save</button>
-                  </> : <>
-                    <button title="Edit message" onClick={() => { setEditing(message.id); setEditText(message.text); }}><Icon name="edit" /></button>
-                    <button className="danger-icon" title="Delete message" onClick={() => deleteMessage(message.id)}><Icon name="trash" /></button>
-                  </>}
-                </div>
+                {editing === message.id ? (
+                  <div className="edit-actions"><button className="button button-quiet" onClick={() => setEditing(null)}>Cancel</button><button className="button button-primary" disabled={busy === `edit-${message.id}`} onClick={() => saveEdit(message.id)}>{busy === `edit-${message.id}` && <span className="spinner" />}{busy === `edit-${message.id}` ? 'Saving' : 'Save'}</button></div>
+                ) : (
+                  <div className="menu-wrap" onClick={(event) => event.stopPropagation()}>
+                    <button className="icon-button row-menu-button" onClick={() => setOpenMenu(openMenu === message.id ? null : message.id)} aria-label="Message actions" aria-expanded={openMenu === message.id}><Icon name="more" /></button>
+                    {openMenu === message.id && <div className="action-menu"><button onClick={() => { setEditing(message.id); setEditText(message.text); setOpenMenu(null); }}><Icon name="edit" />Edit</button><button className="danger" onClick={() => setPendingDelete(message.id)}><Icon name="trash" />Delete</button></div>}
+                  </div>
+                )}
               </article>
             ))}
           </div>
         </section>
       </main>
+
+      {pendingDelete && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPendingDelete(null)}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="dialog-icon"><Icon name="trash" /></div><h2 id="dialog-title">{pendingDelete === 'all' ? 'Delete all messages?' : 'Delete this message?'}</h2><p>{pendingDelete === 'all' ? `This will permanently delete all ${messages.length} messages.` : 'This message will be permanently removed.'} This action cannot be undone.</p><div className="dialog-actions"><button className="button button-quiet" onClick={() => setPendingDelete(null)}>Cancel</button><button className="button button-danger" disabled={busy === 'delete'} onClick={confirmDelete}>{busy === 'delete' && <span className="spinner" />}Delete</button></div></section></div>}
+
+      {toast && <div className={`toast ${toast.type}`} role="status">{toast.type === 'success' ? <Icon name="check" /> : <Icon name="close" />}<span>{toast.message}</span></div>}
     </div>
   );
 }
