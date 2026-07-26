@@ -18,7 +18,9 @@ function Icon({ name }) {
     search: <><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></>,
     more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
     close: <><path d="M18 6L6 18M6 6l12 12"/></>,
-    check: <><path d="M20 6L9 17l-5-5"/></>
+    check: <><path d="M20 6L9 17l-5-5"/></>,
+    chevronDown: <path d="M6 9l6 6 6-6"/>,
+    chevronRight: <path d="M9 6l6 6-6 6"/>
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24">{paths[name]}</svg>;
 }
@@ -29,6 +31,39 @@ function timeLabel(value) {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   }).format(date);
+}
+
+function dateLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
+  }).format(date);
+}
+
+function SuggestionInput({ value, onChange, suggestions, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const matches = suggestions
+    .filter((suggestion) => !value || suggestion.toLocaleLowerCase().includes(value.toLocaleLowerCase()))
+    .slice(0, 8);
+
+  return (
+    <div className="suggestion-input">
+      <input
+        value={value}
+        onChange={(event) => { onChange(event.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        placeholder={placeholder}
+        autoComplete="off"
+        aria-autocomplete="list"
+        aria-expanded={open && matches.length > 0}
+      />
+      {open && matches.length > 0 && <div className="suggestion-menu" role="listbox">
+        {matches.map((suggestion) => <button key={suggestion} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(suggestion); setOpen(false); }}>{suggestion}</button>)}
+      </div>}
+    </div>
+  );
 }
 
 function connectionLabel(uri) {
@@ -44,10 +79,14 @@ export default function Home() {
   const [showUri, setShowUri] = useState(false);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
+  const [author, setAuthor] = useState('');
+  const [source, setSource] = useState('');
+  const [articleTime, setArticleTime] = useState('');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState('');
   const [openMenu, setOpenMenu] = useState(null);
+  const [collapsedMessages, setCollapsedMessages] = useState(() => new Set());
   const [pendingDelete, setPendingDelete] = useState(null);
   const [busy, setBusy] = useState('');
   const [syncState, setSyncState] = useState('idle');
@@ -152,9 +191,12 @@ export default function Home() {
     const text = draft.trim();
     if (!text) return;
     await run('create', async () => {
-      const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ text }) });
+      const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ text, author, source, articleTime }) });
       setMessages((current) => [result.message, ...current]);
       setDraft('');
+      setAuthor('');
+      setSource('');
+      setArticleTime('');
       setLastSynced(new Date());
       setSyncState('success');
     }, 'Message added');
@@ -170,6 +212,22 @@ export default function Home() {
       setLastSynced(new Date());
       setSyncState('success');
     }, 'Message updated');
+  }
+
+  async function setReadStatus(id, isRead) {
+    await run(`read-${id}`, async () => {
+      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead }) });
+      setMessages((current) => current.map((message) => message.id === id ? result.message : message));
+    }, isRead ? 'Marked as read' : 'Marked as unread');
+  }
+
+  function toggleMessage(id) {
+    setCollapsedMessages((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function confirmDelete() {
@@ -194,6 +252,9 @@ export default function Home() {
   const filteredMessages = normalizedQuery
     ? messages.filter((message) => message.text.toLocaleLowerCase().includes(normalizedQuery))
     : messages;
+  const authorSuggestions = [...new Set(messages.flatMap((message) => message.author))].sort((a, b) => a.localeCompare(b));
+  const sourceSuggestions = [...new Set(messages.flatMap((message) => message.source))].sort((a, b) => a.localeCompare(b));
+  const allMessagesCollapsed = messages.length > 0 && messages.every((message) => collapsedMessages.has(message.id));
   const networkActive = Boolean(busy) || syncState === 'loading';
   const operationLabels = { create: 'Adding message...', delete: 'Deleting...' };
   const syncLabel = busy.startsWith('edit-')
@@ -268,37 +329,50 @@ export default function Home() {
               event.currentTarget.form.requestSubmit();
             }
           }} placeholder="Write a message..." />
+          <div className="metadata-fields">
+            <label><span>Author</span><SuggestionInput value={author} onChange={setAuthor} suggestions={authorSuggestions} placeholder="Choose or enter" /></label>
+            <label><span>Source</span><SuggestionInput value={source} onChange={setSource} suggestions={sourceSuggestions} placeholder="Choose or enter" /></label>
+            <label><span>Article date</span><input type="date" value={articleTime} onChange={(event) => setArticleTime(event.target.value)} /></label>
+          </div>
           <div className="composer-bar"><span><kbd>Ctrl</kbd><span>+</span><kbd>Enter</kbd></span><button className="button button-primary" disabled={busy === 'create' || !draft.trim()} type="submit">{busy === 'create' ? <span className="spinner" /> : <Icon name="send" />}Add message</button></div>
         </form>
 
         <section className="message-section">
           <div className="toolbar">
             <div className="search-field"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search messages" aria-label="Search messages" />{query && <button onClick={() => setQuery('')} aria-label="Clear search"><Icon name="close" /></button>}</div>
-            <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>
+            <div className="toolbar-actions">
+              <button className="button button-quiet" disabled={!messages.length} onClick={() => setCollapsedMessages(allMessagesCollapsed ? new Set() : new Set(messages.map((message) => message.id)))}><Icon name={allMessagesCollapsed ? 'chevronRight' : 'chevronDown'} />{allMessagesCollapsed ? 'Expand all' : 'Collapse all'}</button>
+              <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>
+            </div>
           </div>
 
           <div className="message-list">
             {!filteredMessages.length && (
               <div className="empty-state"><Icon name={query ? 'search' : 'message'} /><h2>{query ? 'No matching messages' : 'No messages yet'}</h2><p>{query ? 'Try a different search term.' : 'Add a message to get started.'}</p></div>
             )}
-            {filteredMessages.map((message) => (
-              <article className="message-row" key={message.id}>
+            {filteredMessages.map((message) => {
+              const collapsed = collapsedMessages.has(message.id);
+              return (
+              <article className={`message-row${collapsed ? ' collapsed' : ''}${message.isRead ? '' : ' unread'}`} key={message.id}>
                 <div className="message-main">
                   {editing === message.id ? (
                     <textarea className="edit-textarea" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus />
-                  ) : <p>{message.text}</p>}
+                  ) : <>{!collapsed && <p>{message.text}</p>}{collapsed && <p className="collapsed-label">Message collapsed</p>}{(message.author.length || message.source.length || message.articleTime) && <div className="message-metadata">{message.author.length > 0 && <span>By {message.author.join(', ')}</span>}{message.source.length > 0 && <span>Source: {message.source.join(', ')}</span>}{message.articleTime && <span>Article: {dateLabel(message.articleTime)}</span>}</div>}</>}
                   <time>{timeLabel(message.createdAt)}</time>
                 </div>
                 {editing === message.id ? (
                   <div className="edit-actions"><button className="button button-quiet" onClick={() => setEditing(null)}>Cancel</button><button className="button button-primary" disabled={busy === `edit-${message.id}`} onClick={() => saveEdit(message.id)}>{busy === `edit-${message.id}` && <span className="spinner" />}{busy === `edit-${message.id}` ? 'Saving' : 'Save'}</button></div>
                 ) : (
-                  <div className="menu-wrap" onClick={(event) => event.stopPropagation()}>
+                  <div className="row-actions" onClick={(event) => event.stopPropagation()}>
+                    <button className="icon-button collapse-button" onClick={() => toggleMessage(message.id)} aria-label={collapsed ? 'Expand message' : 'Collapse message'} aria-expanded={!collapsed}><Icon name={collapsed ? 'chevronRight' : 'chevronDown'} /></button>
+                    <div className="menu-wrap">
                     <button className="icon-button row-menu-button" onClick={() => setOpenMenu(openMenu === message.id ? null : message.id)} aria-label="Message actions" aria-expanded={openMenu === message.id}><Icon name="more" /></button>
-                    {openMenu === message.id && <div className="action-menu"><button onClick={() => { setEditing(message.id); setEditText(message.text); setOpenMenu(null); }}><Icon name="edit" />Edit</button><button className="danger" onClick={() => setPendingDelete(message.id)}><Icon name="trash" />Delete</button></div>}
+                    {openMenu === message.id && <div className="action-menu"><button onClick={() => { setReadStatus(message.id, !message.isRead); setOpenMenu(null); }}><Icon name="check" />{message.isRead ? 'Mark unread' : 'Mark read'}</button><button onClick={() => { setEditing(message.id); setEditText(message.text); setCollapsedMessages((current) => { const next = new Set(current); next.delete(message.id); return next; }); setOpenMenu(null); }}><Icon name="edit" />Edit</button><button className="danger" onClick={() => setPendingDelete(message.id)}><Icon name="trash" />Delete</button></div>}
+                    </div>
                   </div>
                 )}
               </article>
-            ))}
+            );})}
           </div>
         </section>
       </main>

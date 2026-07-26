@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { ApiError, errorResponse, mapMessage, withMessages } from '@/lib/mongodb';
+import { ApiError, errorResponse, mapMessage, parseMetadata, withMessages } from '@/lib/mongodb';
 
 export async function GET(request) {
   try {
@@ -20,8 +20,9 @@ export async function POST(request) {
       throw new ApiError('Message text is required.', 400);
     }
 
+    const metadata = parseMetadata(body);
     return await withMessages(request, async (messages) => {
-      const document = { _id: new ObjectId(), text, createdAt: new Date() };
+      const document = { _id: new ObjectId(), text, ...metadata, isRead: false, createdAt: new Date() };
       await messages.insertOne(document);
       return Response.json({ message: mapMessage(document) }, { status: 201 });
     });
