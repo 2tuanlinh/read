@@ -23,9 +23,13 @@ export async function PATCH(request, { params }) {
       throw new ApiError('Message text is required.', 400);
     }
 
-    const metadata = (Object.hasOwn(body, 'author') || Object.hasOwn(body, 'source') || Object.hasOwn(body, 'articleTime'))
+    const parsedMetadata = (Object.hasOwn(body, 'author') || Object.hasOwn(body, 'source') || Object.hasOwn(body, 'articleTime'))
       ? parseMetadata(body)
       : {};
+    const metadata = {};
+    if (Object.hasOwn(body, 'author')) metadata.author = parsedMetadata.author;
+    if (Object.hasOwn(body, 'source')) metadata.source = parsedMetadata.source;
+    if (Object.hasOwn(body, 'articleTime')) metadata.articleTime = parsedMetadata.articleTime;
     return await withMessages(request, async (messages) => {
       const message = await messages.findOneAndUpdate(
         { _id: objectId },

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 const storageKey = 'private-chat.mongodb-uri';
+const themeStorageKey = 'private-chat.theme';
 
 function Icon({ name }) {
   const paths = {
@@ -20,7 +21,9 @@ function Icon({ name }) {
     close: <><path d="M18 6L6 18M6 6l12 12"/></>,
     check: <><path d="M20 6L9 17l-5-5"/></>,
     chevronDown: <path d="M6 9l6 6 6-6"/>,
-    chevronRight: <path d="M9 6l6 6-6 6"/>
+    chevronRight: <path d="M9 6l6 6-6 6"/>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
+    moon: <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24">{paths[name]}</svg>;
 }
@@ -74,6 +77,7 @@ function connectionLabel(uri) {
 
 export default function Home() {
   const [ready, setReady] = useState(false);
+  const [theme, setTheme] = useState('light');
   const [uri, setUri] = useState('');
   const [uriInput, setUriInput] = useState('');
   const [showUri, setShowUri] = useState(false);
@@ -85,6 +89,7 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState('');
+  const [editArticleTime, setEditArticleTime] = useState('');
   const [openMenu, setOpenMenu] = useState(null);
   const [collapsedMessages, setCollapsedMessages] = useState(() => new Set());
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -128,11 +133,21 @@ export default function Home() {
 
   useEffect(() => {
     const saved = localStorage.getItem(storageKey) || '';
+    const savedTheme = localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light';
+    setTheme(savedTheme);
+    document.documentElement.dataset.theme = savedTheme;
     setUri(saved);
     setUriInput(saved);
     setReady(true);
     if (saved) loadMessages(saved).catch((loadError) => setError(loadError.message));
   }, []);
+
+  function toggleTheme() {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    localStorage.setItem(themeStorageKey, nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+  }
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -194,9 +209,6 @@ export default function Home() {
       const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ text, author, source, articleTime }) });
       setMessages((current) => [result.message, ...current]);
       setDraft('');
-      setAuthor('');
-      setSource('');
-      setArticleTime('');
       setLastSynced(new Date());
       setSyncState('success');
     }, 'Message added');
@@ -206,7 +218,7 @@ export default function Home() {
     const text = editText.trim();
     if (!text) return;
     await run(`edit-${id}`, async () => {
-      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ text }) });
+      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ text, articleTime: editArticleTime }) });
       setMessages((current) => current.map((message) => message.id === id ? result.message : message));
       setEditing(null);
       setLastSynced(new Date());
@@ -272,6 +284,7 @@ export default function Home() {
   if (!uri) {
     return (
       <main className="login-page">
+        <button className="button button-quiet login-theme" onClick={toggleTheme} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /><span>{theme === 'light' ? 'Dark' : 'Light'}</span></button>
         <section className="login-card">
           <div className="login-brand"><span className="brand-icon"><Icon name="message" /></span><span>Private Chat</span></div>
           <div className="login-heading">
@@ -307,6 +320,7 @@ export default function Home() {
           <div className="brand"><span className="brand-icon"><Icon name="message" /></span><strong>Private Chat</strong></div>
           <div className="header-actions">
             <span className="connection"><i /> <span>{connectionLabel(uri)}</span></span>
+            <button className="button button-quiet theme-toggle" onClick={toggleTheme} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`} title={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /><span>{theme === 'light' ? 'Dark' : 'Light'}</span></button>
             <button className="button button-quiet" disabled={busy === 'refresh'} onClick={() => run('refresh', () => loadMessages(), 'Messages refreshed')}>{busy === 'refresh' ? <span className="spinner" /> : <Icon name="refresh" />}<span>{busy === 'refresh' ? 'Refreshing' : 'Refresh'}</span></button>
             <button className="button button-quiet" onClick={logout}><Icon name="logout" /><span>Disconnect</span></button>
           </div>
@@ -356,7 +370,7 @@ export default function Home() {
               <article className={`message-row${collapsed ? ' collapsed' : ''}${message.isRead ? '' : ' unread'}`} key={message.id}>
                 <div className="message-main">
                   {editing === message.id ? (
-                    <textarea className="edit-textarea" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus />
+                    <div className="edit-fields"><textarea className="edit-textarea" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus /><label><span>Article date</span><input type="date" value={editArticleTime} onChange={(event) => setEditArticleTime(event.target.value)} /></label></div>
                   ) : <>{!collapsed && <p>{message.text}</p>}{collapsed && <p className="collapsed-label">Message collapsed</p>}{(message.author.length || message.source.length || message.articleTime) && <div className="message-metadata">{message.author.length > 0 && <span>By {message.author.join(', ')}</span>}{message.source.length > 0 && <span>Source: {message.source.join(', ')}</span>}{message.articleTime && <span>Article: {dateLabel(message.articleTime)}</span>}</div>}</>}
                   <time>{timeLabel(message.createdAt)}</time>
                 </div>
@@ -367,7 +381,7 @@ export default function Home() {
                     <button className="icon-button collapse-button" onClick={() => toggleMessage(message.id)} aria-label={collapsed ? 'Expand message' : 'Collapse message'} aria-expanded={!collapsed}><Icon name={collapsed ? 'chevronRight' : 'chevronDown'} /></button>
                     <div className="menu-wrap">
                     <button className="icon-button row-menu-button" onClick={() => setOpenMenu(openMenu === message.id ? null : message.id)} aria-label="Message actions" aria-expanded={openMenu === message.id}><Icon name="more" /></button>
-                    {openMenu === message.id && <div className="action-menu"><button onClick={() => { setReadStatus(message.id, !message.isRead); setOpenMenu(null); }}><Icon name="check" />{message.isRead ? 'Mark unread' : 'Mark read'}</button><button onClick={() => { setEditing(message.id); setEditText(message.text); setCollapsedMessages((current) => { const next = new Set(current); next.delete(message.id); return next; }); setOpenMenu(null); }}><Icon name="edit" />Edit</button><button className="danger" onClick={() => setPendingDelete(message.id)}><Icon name="trash" />Delete</button></div>}
+                    {openMenu === message.id && <div className="action-menu"><button onClick={() => { setReadStatus(message.id, !message.isRead); setOpenMenu(null); }}><Icon name="check" />{message.isRead ? 'Mark unread' : 'Mark read'}</button><button onClick={() => { setEditing(message.id); setEditText(message.text); setEditArticleTime(message.articleTime ? message.articleTime.slice(0, 10) : ''); setCollapsedMessages((current) => { const next = new Set(current); next.delete(message.id); return next; }); setOpenMenu(null); }}><Icon name="edit" />Edit</button><button className="danger" onClick={() => setPendingDelete(message.id)}><Icon name="trash" />Delete</button></div>}
                     </div>
                   </div>
                 )}
