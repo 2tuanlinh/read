@@ -5,30 +5,6 @@ import SuggestionInput from './SuggestionInput';
 
 export const defaultFilters = { query: '', author: '', source: '', from: '', to: '', status: 'all', order: 'newest' };
 
-export function filterMessages(messages, filters) {
-  const query = filters.query.trim().toLocaleLowerCase();
-  const author = filters.author.trim().toLocaleLowerCase();
-  const source = filters.source.trim().toLocaleLowerCase();
-  const from = filters.from ? new Date(`${filters.from}T00:00:00.000Z`).getTime() : null;
-  const to = filters.to ? new Date(`${filters.to}T23:59:59.999Z`).getTime() : null;
-  return messages.filter((message) => {
-    const articleTime = message.articleTime ? new Date(message.articleTime).getTime() : null;
-    return (!query || message.text.toLocaleLowerCase().includes(query) || message.title.toLocaleLowerCase().includes(query))
-      && (!author || message.author.some((value) => value.toLocaleLowerCase().includes(author)))
-      && (!source || message.source.some((value) => value.toLocaleLowerCase().includes(source)))
-      && (filters.status === 'all' || (filters.status === 'read') === message.isRead)
-      && (from === null || (articleTime !== null && articleTime >= from))
-      && (to === null || (articleTime !== null && articleTime <= to));
-  }).sort((left, right) => {
-    const leftDate = left.articleTime ? new Date(left.articleTime).getTime() : null;
-    const rightDate = right.articleTime ? new Date(right.articleTime).getTime() : null;
-    if (leftDate === null && rightDate === null) return new Date(right.createdAt) - new Date(left.createdAt);
-    if (leftDate === null) return 1;
-    if (rightDate === null) return -1;
-    return filters.order === 'oldest' ? leftDate - rightDate : rightDate - leftDate;
-  });
-}
-
 export default function MessageFilters({ filters, setFilters, authors, sources, shown, total }) {
   const update = (key) => (valueOrEvent) => setFilters((current) => ({ ...current, [key]: valueOrEvent?.target ? valueOrEvent.target.value : valueOrEvent }));
   const activeCount = ['query', 'author', 'source', 'from', 'to'].filter((key) => filters[key]).length + (filters.status !== 'all' ? 1 : 0) + (filters.order !== 'newest' ? 1 : 0);

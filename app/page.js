@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ArticleCards from './components/ArticleCards';
 import Icon from './components/Icon';
 import MessageFeed from './components/MessageFeed';
-import MessageFilters, { defaultFilters, filterMessages } from './components/MessageFilters';
+import MessageFilters, { defaultFilters } from './components/MessageFilters';
 import Pagination from './components/Pagination';
 import SuggestionInput from './components/SuggestionInput';
 
@@ -26,6 +26,10 @@ export default function Home() {
   const [uriInput, setUriInput] = useState('');
   const [showUri, setShowUri] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [totalMessages, setTotalMessages] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [authorSuggestions, setAuthorSuggestions] = useState([]);
+  const [sourceSuggestions, setSourceSuggestions] = useState([]);
   const [title, setTitle] = useState('');
   const [draft, setDraft] = useState('');
   const [author, setAuthor] = useState('');
@@ -46,6 +50,7 @@ export default function Home() {
   const [lastSynced, setLastSynced] = useState(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
+  const loadSequence = useRef(0);
 
   async function api(path, options = {}, activeUri = uri) {
     const response = await fetch(path, {
@@ -61,15 +66,25 @@ export default function Home() {
     return data;
   }
 
-  async function loadMessages(activeUri = uri, quiet = false) {
+  async function loadMessages(activeUri = uri, quiet = false, page = currentPage, activeFilters = filters, activePageSize = pageSize) {
+    const sequence = ++loadSequence.current;
     if (!quiet) setError('');
     setSyncState('loading');
     try {
-      const result = await api('/api/messages', {}, activeUri);
+      const params = new URLSearchParams({ page: String(page), pageSize: String(activePageSize) });
+      Object.entries(activeFilters).forEach(([key, value]) => value && params.set(key, value));
+      const result = await api(`/api/messages?${params}`, {}, activeUri);
+      if (sequence !== loadSequence.current) return;
       setMessages(result.messages || []);
+      setTotalMessages(result.totalMessages || 0);
+      setFilteredTotal(result.pagination?.total || 0);
+      setAuthorSuggestions(result.suggestions?.authors || []);
+      setSourceSuggestions(result.suggestions?.sources || []);
+      if (result.pagination && page > result.pagination.totalPages) setCurrentPage(result.pagination.totalPages);
       setLastSynced(new Date());
       setSyncState('success');
     } catch (loadError) {
+      if (sequence !== loadSequence.current) return;
       setSyncState('error');
       throw loadError;
     }
@@ -89,7 +104,6 @@ export default function Home() {
     setUri(saved);
     setUriInput(saved);
     setReady(true);
-    if (saved) loadMessages(saved).catch((loadError) => setError(loadError.message));
   }, []);
 
   function toggleTheme() {
@@ -116,6 +130,11 @@ export default function Home() {
     setCurrentPage(1);
   }, [filters, mode, pageSize]);
 
+  useEffect(() => {
+    if (!ready || !uri) return;
+    loadMessages(uri, true).catch((loadError) => setError(loadError.message));
+  }, [ready, uri, currentPage, pageSize, filters]);
+
   async function login(event) {
     event.preventDefault();
     const value = uriInput.trim();
@@ -129,7 +148,6 @@ export default function Home() {
       await api('/api/health', {}, value);
       localStorage.setItem(storageKey, value);
       setUri(value);
-      await loadMessages(value);
     } catch (loginError) {
       setError(loginError.message);
     } finally {
@@ -142,6 +160,8 @@ export default function Home() {
     setUri('');
     setUriInput('');
     setMessages([]);
+    setTotalMessages(0);
+    setFilteredTotal(0);
     setTitle('');
     setDraft('');
     setFilters(defaultFilters);
@@ -168,12 +188,11 @@ export default function Home() {
     const text = draft.trim();
     if (!text) return;
     await run('create', async () => {
-      const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ title, text, author, source, articleTime }) });
-      setMessages((current) => [result.message, ...current]);
+      await api('/api/messages', { method: 'POST', body: JSON.stringify({ title, text, author, source, articleTime }) });
       setTitle('');
       setDraft('');
-      setLastSynced(new Date());
-      setSyncState('success');
+      if (currentPage !== 1) setCurrentPage(1);
+      else await loadMessages(uri, true, 1);
     }, 'Message added');
   }
 
@@ -182,17 +201,15 @@ export default function Home() {
     if (!text) return;
     await run(`edit-${id}`, async () => {
       const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ title: editTitle, text, articleTime: editArticleTime }) });
-      setMessages((current) => current.map((message) => message.id === id ? result.message : message));
       setEditing(null);
-      setLastSynced(new Date());
-      setSyncState('success');
+      await loadMessages(uri, true);
     }, 'Message updated');
   }
 
   async function setReadStatus(id, isRead) {
     await run(`read-${id}`, async () => {
-      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead }) });
-      setMessages((current) => current.map((message) => message.id === id ? result.message : message));
+      await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ isRead }) });
+      await loadMessages(uri, true);
     }, isRead ? 'Marked as read' : 'Marked as unread');
   }
 
@@ -213,9 +230,11 @@ export default function Home() {
       if (target === 'all') {
         await api('/api/messages', { method: 'DELETE' });
         setMessages([]);
+        setTotalMessages(0);
+        setFilteredTotal(0);
       } else {
         await api(`/api/messages/${target}`, { method: 'DELETE' });
-        setMessages((current) => current.filter((message) => message.id !== target));
+        await loadMessages(uri, true);
       }
       setPendingDelete(null);
       setOpenMenu(null);
@@ -224,13 +243,9 @@ export default function Home() {
     }, target === 'all' ? 'All messages deleted' : 'Message deleted');
   }
 
-  const filteredMessages = filterMessages(messages, filters);
-  const totalPages = Math.max(1, Math.ceil(filteredMessages.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const visiblePage = Math.min(currentPage, totalPages);
-  const paginatedMessages = filteredMessages.slice((visiblePage - 1) * pageSize, visiblePage * pageSize);
-  const authorSuggestions = [...new Set(messages.flatMap((message) => message.author))].sort((a, b) => a.localeCompare(b));
-  const sourceSuggestions = [...new Set(messages.flatMap((message) => message.source))].sort((a, b) => a.localeCompare(b));
-  const allMessagesCollapsed = filteredMessages.length > 0 && filteredMessages.every((message) => collapsedMessages.has(message.id));
+  const allMessagesCollapsed = messages.length > 0 && messages.every((message) => collapsedMessages.has(message.id));
   const networkActive = Boolean(busy) || syncState === 'loading';
   const operationLabels = { create: 'Adding message...', delete: 'Deleting...' };
   const syncLabel = busy.startsWith('edit-')
@@ -299,7 +314,7 @@ export default function Home() {
       <main className="content">
         <div className="page-heading">
           <div><span className="mode-eyebrow">{mode} mode</span><h1>{mode === 'read' ? 'Reading list' : 'Manage messages'}</h1><p>{mode === 'read' ? 'A focused feed shared with your VS Code extension.' : 'Create, revise, and organize your message collection.'}</p></div>
-          <div className="page-status"><span className={`sync-status ${syncState}`}>{networkActive && <span className="spinner" />}{!networkActive && syncState === 'success' && <Icon name="check" />}{!networkActive && syncState === 'error' && <Icon name="close" />}{syncLabel}</span><span className="message-count">{messages.length} {messages.length === 1 ? 'message' : 'messages'}</span></div>
+          <div className="page-status"><span className={`sync-status ${syncState}`}>{networkActive && <span className="spinner" />}{!networkActive && syncState === 'success' && <Icon name="check" />}{!networkActive && syncState === 'error' && <Icon name="close" />}{syncLabel}</span><span className="message-count">{totalMessages} {totalMessages === 1 ? 'message' : 'messages'}</span></div>
         </div>
 
         {error && <div className="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><Icon name="close" /></button></div>}
@@ -321,20 +336,20 @@ export default function Home() {
         </form>}
 
         <section className="message-section">
-          <MessageFilters filters={filters} setFilters={setFilters} authors={authorSuggestions} sources={sourceSuggestions} shown={filteredMessages.length} total={messages.length} />
+          <MessageFilters filters={filters} setFilters={setFilters} authors={authorSuggestions} sources={sourceSuggestions} shown={filteredTotal} total={totalMessages} />
           <div className="toolbar">
-            <span className="toolbar-label">{filteredMessages.length} {filteredMessages.length === 1 ? (mode === 'read' ? 'article' : 'result') : (mode === 'read' ? 'articles' : 'results')}</span>
+            <span className="toolbar-label">{filteredTotal} {filteredTotal === 1 ? (mode === 'read' ? 'article' : 'result') : (mode === 'read' ? 'articles' : 'results')}</span>
             <div className="toolbar-actions">
-              {mode === 'edit' && <button className="button button-quiet" disabled={!filteredMessages.length} onClick={() => setCollapsedMessages((current) => { const next = new Set(current); filteredMessages.forEach((message) => allMessagesCollapsed ? next.delete(message.id) : next.add(message.id)); return next; })}><Icon name={allMessagesCollapsed ? 'chevronRight' : 'chevronDown'} />{allMessagesCollapsed ? 'Expand all' : 'Collapse all'}</button>}
-              {mode === 'edit' && <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>}
+              {mode === 'edit' && <button className="button button-quiet" disabled={!messages.length} onClick={() => setCollapsedMessages((current) => { const next = new Set(current); messages.forEach((message) => allMessagesCollapsed ? next.delete(message.id) : next.add(message.id)); return next; })}><Icon name={allMessagesCollapsed ? 'chevronRight' : 'chevronDown'} />{allMessagesCollapsed ? 'Expand all' : 'Collapse all'}</button>}
+              {mode === 'edit' && <button className="button button-danger-quiet" disabled={!totalMessages} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>}
             </div>
           </div>
-          {mode === 'read' ? <ArticleCards messages={paginatedMessages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={paginatedMessages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
-          <Pagination currentPage={visiblePage} pageSize={pageSize} totalItems={filteredMessages.length} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          {mode === 'read' ? <ArticleCards messages={messages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={messages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
+          <Pagination currentPage={visiblePage} pageSize={pageSize} totalItems={filteredTotal} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
         </section>
       </main>
 
-      {pendingDelete && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPendingDelete(null)}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="dialog-icon"><Icon name="trash" /></div><h2 id="dialog-title">{pendingDelete === 'all' ? 'Delete all messages?' : 'Delete this message?'}</h2><p>{pendingDelete === 'all' ? `This will permanently delete all ${messages.length} messages.` : 'This message will be permanently removed.'} This action cannot be undone.</p><div className="dialog-actions"><button className="button button-quiet" onClick={() => setPendingDelete(null)}>Cancel</button><button className="button button-danger" disabled={busy === 'delete'} onClick={confirmDelete}>{busy === 'delete' && <span className="spinner" />}Delete</button></div></section></div>}
+      {pendingDelete && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPendingDelete(null)}><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="dialog-icon"><Icon name="trash" /></div><h2 id="dialog-title">{pendingDelete === 'all' ? 'Delete all messages?' : 'Delete this message?'}</h2><p>{pendingDelete === 'all' ? `This will permanently delete all ${totalMessages} messages.` : 'This message will be permanently removed.'} This action cannot be undone.</p><div className="dialog-actions"><button className="button button-quiet" onClick={() => setPendingDelete(null)}>Cancel</button><button className="button button-danger" disabled={busy === 'delete'} onClick={confirmDelete}>{busy === 'delete' && <span className="spinner" />}Delete</button></div></section></div>}
 
       {toast && <div className={`toast ${toast.type}`} role="status">{toast.type === 'success' ? <Icon name="check" /> : <Icon name="close" />}<span>{toast.message}</span></div>}
     </div>
