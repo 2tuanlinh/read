@@ -1,4 +1,24 @@
-import { ApiError, errorResponse, mapMessage, parseMetadata, parseObjectId, withMessages } from '@/lib/mongodb';
+import { ApiError, errorResponse, mapMessage, normalizeText, parseMetadata, parseObjectId, withMessages } from '@/lib/mongodb';
+
+export async function GET(request, { params }) {
+  try {
+    const { id } = await params;
+    const objectId = parseObjectId(id);
+    return await withMessages(request, async (messages) => {
+      const message = await messages.findOne({ _id: objectId });
+      if (!message) {
+        throw new ApiError('Message not found.', 404);
+      }
+      if (!Object.hasOwn(message, 'title')) {
+        await messages.updateOne({ _id: objectId }, { $set: { title: '' } });
+        message.title = '';
+      }
+      return Response.json({ message: mapMessage(message) });
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
 export async function PATCH(request, { params }) {
   try {
@@ -6,8 +26,11 @@ export async function PATCH(request, { params }) {
     const objectId = parseObjectId(id);
     const body = await request.json();
     const updates = {};
+    if (Object.hasOwn(body, 'title')) {
+      updates.title = normalizeText(body.title).trim();
+    }
     if (Object.hasOwn(body, 'text')) {
-      const text = typeof body.text === 'string' ? body.text.trim() : '';
+      const text = normalizeText(body.text).trim();
       if (!text) {
         throw new ApiError('Message text is required.', 400);
       }
@@ -20,7 +43,7 @@ export async function PATCH(request, { params }) {
       updates.isRead = body.isRead;
     }
     if (!Object.keys(updates).length && !Object.hasOwn(body, 'author') && !Object.hasOwn(body, 'source') && !Object.hasOwn(body, 'articleTime')) {
-      throw new ApiError('Message text is required.', 400);
+      throw new ApiError('No message changes were provided.', 400);
     }
 
     const parsedMetadata = (Object.hasOwn(body, 'author') || Object.hasOwn(body, 'source') || Object.hasOwn(body, 'articleTime'))

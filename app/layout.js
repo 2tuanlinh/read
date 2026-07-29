@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Private Chat Manager',
-  description: 'A focused MongoDB message manager'
+  title: 'tuan2linh',
+  description: 'A focused MongoDB reading and message manager'
 };
 
 export default function RootLayout({ children }) {

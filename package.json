@@ -1,8 +1,8 @@
 {
-  "name": "private-chat-manager",
+  "name": "tuan2linh-web",
   "version": "2.0.0",
   "private": true,
-  "description": "Vercel-ready MongoDB message manager",
+  "description": "Responsive MongoDB reader and message manager for tuan2linh",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

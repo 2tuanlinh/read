@@ -1,6 +1,6 @@
-# Private Chat Manager
+# tuan2linh
 
-A responsive Next.js application for managing messages in a user-provided MongoDB database. It is designed for one-click deployment to Vercel.
+A responsive Next.js application for reading and managing messages in a user-provided MongoDB database. It is designed for one-click deployment to Vercel.
 
 ## Behavior
 
@@ -9,7 +9,8 @@ A responsive Next.js application for managing messages in a user-provided MongoD
 - Users can log out and connect with a different URI.
 - The URI is sent to same-origin Next.js API routes for each database operation.
 - The fixed database and collection are `private_chat.messages`.
-- Messages use the schema `{ _id: ObjectId, text: string, createdAt: Date }`, matching the VS Code extension.
+- Read mode provides filters and non-destructive message actions. Edit mode provides creation, editing, and deletion controls.
+- Messages use the shared extension schema, including `text`, `author`, `source`, `articleTime`, `isRead`, and `createdAt`.
 
 This design intentionally prioritizes convenience over secret security. A MongoDB URI stored in browser storage can be read by JavaScript running on the site.
 

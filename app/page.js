@@ -1,73 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import ArticleCards from './components/ArticleCards';
+import Icon from './components/Icon';
+import MessageFeed from './components/MessageFeed';
+import MessageFilters, { defaultFilters, filterMessages } from './components/MessageFilters';
+import SuggestionInput from './components/SuggestionInput';
 
 const storageKey = 'private-chat.mongodb-uri';
 const themeStorageKey = 'private-chat.theme';
-
-function Icon({ name }) {
-  const paths = {
-    database: <><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/><path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></>,
-    refresh: <><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></>,
-    logout: <><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></>,
-    send: <><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></>,
-    edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/></>,
-    trash: <><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 15H6L5 6"/></>,
-    message: <><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></>,
-    shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></>,
-    eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></>,
-    search: <><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></>,
-    more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
-    close: <><path d="M18 6L6 18M6 6l12 12"/></>,
-    check: <><path d="M20 6L9 17l-5-5"/></>,
-    chevronDown: <path d="M6 9l6 6 6-6"/>,
-    chevronRight: <path d="M9 6l6 6-6 6"/>,
-    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
-    moon: <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>
-  };
-  return <svg aria-hidden="true" viewBox="0 0 24 24">{paths[name]}</svg>;
-}
-
-function timeLabel(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Unknown time';
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-  }).format(date);
-}
-
-function dateLabel(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Unknown date';
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
-  }).format(date);
-}
-
-function SuggestionInput({ value, onChange, suggestions, placeholder }) {
-  const [open, setOpen] = useState(false);
-  const matches = suggestions
-    .filter((suggestion) => !value || suggestion.toLocaleLowerCase().includes(value.toLocaleLowerCase()))
-    .slice(0, 8);
-
-  return (
-    <div className="suggestion-input">
-      <input
-        value={value}
-        onChange={(event) => { onChange(event.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-        placeholder={placeholder}
-        autoComplete="off"
-        aria-autocomplete="list"
-        aria-expanded={open && matches.length > 0}
-      />
-      {open && matches.length > 0 && <div className="suggestion-menu" role="listbox">
-        {matches.map((suggestion) => <button key={suggestion} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(suggestion); setOpen(false); }}>{suggestion}</button>)}
-      </div>}
-    </div>
-  );
-}
+const modeStorageKey = 'private-chat.mode';
 
 function connectionLabel(uri) {
   const match = uri.match(/@([^/?]+)/);
@@ -78,16 +20,19 @@ function connectionLabel(uri) {
 export default function Home() {
   const [ready, setReady] = useState(false);
   const [theme, setTheme] = useState('light');
+  const [mode, setMode] = useState('read');
   const [uri, setUri] = useState('');
   const [uriInput, setUriInput] = useState('');
   const [showUri, setShowUri] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [title, setTitle] = useState('');
   const [draft, setDraft] = useState('');
   const [author, setAuthor] = useState('');
   const [source, setSource] = useState('');
   const [articleTime, setArticleTime] = useState('');
-  const [query, setQuery] = useState('');
+  const [filters, setFilters] = useState(defaultFilters);
   const [editing, setEditing] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
   const [editArticleTime, setEditArticleTime] = useState('');
   const [openMenu, setOpenMenu] = useState(null);
@@ -134,7 +79,9 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem(storageKey) || '';
     const savedTheme = localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light';
+    const savedMode = localStorage.getItem(modeStorageKey) === 'edit' ? 'edit' : 'read';
     setTheme(savedTheme);
+    setMode(savedMode);
     document.documentElement.dataset.theme = savedTheme;
     setUri(saved);
     setUriInput(saved);
@@ -147,6 +94,13 @@ export default function Home() {
     setTheme(nextTheme);
     localStorage.setItem(themeStorageKey, nextTheme);
     document.documentElement.dataset.theme = nextTheme;
+  }
+
+  function changeMode(nextMode) {
+    setMode(nextMode);
+    setEditing(null);
+    setOpenMenu(null);
+    localStorage.setItem(modeStorageKey, nextMode);
   }
 
   useEffect(() => {
@@ -181,8 +135,9 @@ export default function Home() {
     setUri('');
     setUriInput('');
     setMessages([]);
+    setTitle('');
     setDraft('');
-    setQuery('');
+    setFilters(defaultFilters);
     setEditing(null);
     setError('');
   }
@@ -206,8 +161,9 @@ export default function Home() {
     const text = draft.trim();
     if (!text) return;
     await run('create', async () => {
-      const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ text, author, source, articleTime }) });
+      const result = await api('/api/messages', { method: 'POST', body: JSON.stringify({ title, text, author, source, articleTime }) });
       setMessages((current) => [result.message, ...current]);
+      setTitle('');
       setDraft('');
       setLastSynced(new Date());
       setSyncState('success');
@@ -218,7 +174,7 @@ export default function Home() {
     const text = editText.trim();
     if (!text) return;
     await run(`edit-${id}`, async () => {
-      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ text, articleTime: editArticleTime }) });
+      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ title: editTitle, text, articleTime: editArticleTime }) });
       setMessages((current) => current.map((message) => message.id === id ? result.message : message));
       setEditing(null);
       setLastSynced(new Date());
@@ -233,11 +189,12 @@ export default function Home() {
     }, isRead ? 'Marked as read' : 'Marked as unread');
   }
 
-  function toggleMessage(id) {
+  function toggleMessage(id, force) {
     setCollapsedMessages((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const collapse = typeof force === 'boolean' ? force : !next.has(id);
+      if (collapse) next.add(id);
+      else next.delete(id);
       return next;
     });
   }
@@ -260,13 +217,10 @@ export default function Home() {
     }, target === 'all' ? 'All messages deleted' : 'Message deleted');
   }
 
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredMessages = normalizedQuery
-    ? messages.filter((message) => message.text.toLocaleLowerCase().includes(normalizedQuery))
-    : messages;
+  const filteredMessages = filterMessages(messages, filters);
   const authorSuggestions = [...new Set(messages.flatMap((message) => message.author))].sort((a, b) => a.localeCompare(b));
   const sourceSuggestions = [...new Set(messages.flatMap((message) => message.source))].sort((a, b) => a.localeCompare(b));
-  const allMessagesCollapsed = messages.length > 0 && messages.every((message) => collapsedMessages.has(message.id));
+  const allMessagesCollapsed = filteredMessages.length > 0 && filteredMessages.every((message) => collapsedMessages.has(message.id));
   const networkActive = Boolean(busy) || syncState === 'loading';
   const operationLabels = { create: 'Adding message...', delete: 'Deleting...' };
   const syncLabel = busy.startsWith('edit-')
@@ -286,7 +240,7 @@ export default function Home() {
       <main className="login-page">
         <button className="button button-quiet login-theme" onClick={toggleTheme} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /><span>{theme === 'light' ? 'Dark' : 'Light'}</span></button>
         <section className="login-card">
-          <div className="login-brand"><span className="brand-icon"><Icon name="message" /></span><span>Private Chat</span></div>
+          <div className="login-brand"><span className="brand-icon"><Icon name="message" /></span><span>tuan2linh</span></div>
           <div className="login-heading">
             <h1>Connect your database</h1>
             <p>Use the MongoDB connection URI configured in your VS Code extension.</p>
@@ -317,7 +271,11 @@ export default function Home() {
     <div className="app-shell" onClick={() => openMenu && setOpenMenu(null)}>
       <header className="app-header">
         <div className="header-inner">
-          <div className="brand"><span className="brand-icon"><Icon name="message" /></span><strong>Private Chat</strong></div>
+          <div className="brand"><span className="brand-icon"><Icon name="message" /></span><strong>tuan2linh</strong></div>
+          <nav className="mode-switch" aria-label="Application mode">
+            <button className={mode === 'read' ? 'active' : ''} onClick={() => changeMode('read')} aria-pressed={mode === 'read'}><Icon name="read" />Read</button>
+            <button className={mode === 'edit' ? 'active' : ''} onClick={() => changeMode('edit')} aria-pressed={mode === 'edit'}><Icon name="edit" />Edit</button>
+          </nav>
           <div className="header-actions">
             <span className="connection"><i /> <span>{connectionLabel(uri)}</span></span>
             <button className="button button-quiet theme-toggle" onClick={toggleTheme} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} theme`} title={`Use ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /><span>{theme === 'light' ? 'Dark' : 'Light'}</span></button>
@@ -330,13 +288,14 @@ export default function Home() {
 
       <main className="content">
         <div className="page-heading">
-          <div><h1>Messages</h1><p>Messages shared with your VS Code extension.</p></div>
+          <div><span className="mode-eyebrow">{mode} mode</span><h1>{mode === 'read' ? 'Reading list' : 'Manage messages'}</h1><p>{mode === 'read' ? 'A focused feed shared with your VS Code extension.' : 'Create, revise, and organize your message collection.'}</p></div>
           <div className="page-status"><span className={`sync-status ${syncState}`}>{networkActive && <span className="spinner" />}{!networkActive && syncState === 'success' && <Icon name="check" />}{!networkActive && syncState === 'error' && <Icon name="close" />}{syncLabel}</span><span className="message-count">{messages.length} {messages.length === 1 ? 'message' : 'messages'}</span></div>
         </div>
 
         {error && <div className="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><Icon name="close" /></button></div>}
 
-        <form className="composer" onSubmit={createMessage}>
+        {mode === 'edit' && <form className="composer" onSubmit={createMessage}>
+          <input className="composer-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Article title (optional)" />
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
@@ -349,45 +308,18 @@ export default function Home() {
             <label><span>Article date</span><input type="date" value={articleTime} onChange={(event) => setArticleTime(event.target.value)} /></label>
           </div>
           <div className="composer-bar"><span><kbd>Ctrl</kbd><span>+</span><kbd>Enter</kbd></span><button className="button button-primary" disabled={busy === 'create' || !draft.trim()} type="submit">{busy === 'create' ? <span className="spinner" /> : <Icon name="send" />}Add message</button></div>
-        </form>
+        </form>}
 
         <section className="message-section">
+          <MessageFilters filters={filters} setFilters={setFilters} authors={authorSuggestions} sources={sourceSuggestions} shown={filteredMessages.length} total={messages.length} />
           <div className="toolbar">
-            <div className="search-field"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search messages" aria-label="Search messages" />{query && <button onClick={() => setQuery('')} aria-label="Clear search"><Icon name="close" /></button>}</div>
+            <span className="toolbar-label">{filteredMessages.length} {filteredMessages.length === 1 ? (mode === 'read' ? 'article' : 'result') : (mode === 'read' ? 'articles' : 'results')}</span>
             <div className="toolbar-actions">
-              <button className="button button-quiet" disabled={!messages.length} onClick={() => setCollapsedMessages(allMessagesCollapsed ? new Set() : new Set(messages.map((message) => message.id)))}><Icon name={allMessagesCollapsed ? 'chevronRight' : 'chevronDown'} />{allMessagesCollapsed ? 'Expand all' : 'Collapse all'}</button>
-              <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>
+              {mode === 'edit' && <button className="button button-quiet" disabled={!filteredMessages.length} onClick={() => setCollapsedMessages((current) => { const next = new Set(current); filteredMessages.forEach((message) => allMessagesCollapsed ? next.delete(message.id) : next.add(message.id)); return next; })}><Icon name={allMessagesCollapsed ? 'chevronRight' : 'chevronDown'} />{allMessagesCollapsed ? 'Expand all' : 'Collapse all'}</button>}
+              {mode === 'edit' && <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>}
             </div>
           </div>
-
-          <div className="message-list">
-            {!filteredMessages.length && (
-              <div className="empty-state"><Icon name={query ? 'search' : 'message'} /><h2>{query ? 'No matching messages' : 'No messages yet'}</h2><p>{query ? 'Try a different search term.' : 'Add a message to get started.'}</p></div>
-            )}
-            {filteredMessages.map((message) => {
-              const collapsed = collapsedMessages.has(message.id);
-              return (
-              <article className={`message-row${collapsed ? ' collapsed' : ''}${message.isRead ? '' : ' unread'}`} key={message.id}>
-                <div className="message-main">
-                  {editing === message.id ? (
-                    <div className="edit-fields"><textarea className="edit-textarea" value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus /><label><span>Article date</span><input type="date" value={editArticleTime} onChange={(event) => setEditArticleTime(event.target.value)} /></label></div>
-                  ) : <>{!collapsed && <p>{message.text}</p>}{collapsed && <p className="collapsed-label">Message collapsed</p>}{(message.author.length || message.source.length || message.articleTime) && <div className="message-metadata">{message.author.length > 0 && <span>By {message.author.join(', ')}</span>}{message.source.length > 0 && <span>Source: {message.source.join(', ')}</span>}{message.articleTime && <span>Article: {dateLabel(message.articleTime)}</span>}</div>}</>}
-                  <time>{timeLabel(message.createdAt)}</time>
-                </div>
-                {editing === message.id ? (
-                  <div className="edit-actions"><button className="button button-quiet" onClick={() => setEditing(null)}>Cancel</button><button className="button button-primary" disabled={busy === `edit-${message.id}`} onClick={() => saveEdit(message.id)}>{busy === `edit-${message.id}` && <span className="spinner" />}{busy === `edit-${message.id}` ? 'Saving' : 'Save'}</button></div>
-                ) : (
-                  <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-                    <button className="icon-button collapse-button" onClick={() => toggleMessage(message.id)} aria-label={collapsed ? 'Expand message' : 'Collapse message'} aria-expanded={!collapsed}><Icon name={collapsed ? 'chevronRight' : 'chevronDown'} /></button>
-                    <div className="menu-wrap">
-                    <button className="icon-button row-menu-button" onClick={() => setOpenMenu(openMenu === message.id ? null : message.id)} aria-label="Message actions" aria-expanded={openMenu === message.id}><Icon name="more" /></button>
-                    {openMenu === message.id && <div className="action-menu"><button onClick={() => { setReadStatus(message.id, !message.isRead); setOpenMenu(null); }}><Icon name="check" />{message.isRead ? 'Mark unread' : 'Mark read'}</button><button onClick={() => { setEditing(message.id); setEditText(message.text); setEditArticleTime(message.articleTime ? message.articleTime.slice(0, 10) : ''); setCollapsedMessages((current) => { const next = new Set(current); next.delete(message.id); return next; }); setOpenMenu(null); }}><Icon name="edit" />Edit</button><button className="danger" onClick={() => setPendingDelete(message.id)}><Icon name="trash" />Delete</button></div>}
-                    </div>
-                  </div>
-                )}
-              </article>
-            );})}
-          </div>
+          {mode === 'read' ? <ArticleCards messages={filteredMessages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={filteredMessages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
         </section>
       </main>
 
