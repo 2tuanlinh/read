@@ -5,6 +5,7 @@ import ArticleCards from './components/ArticleCards';
 import Icon from './components/Icon';
 import MessageFeed from './components/MessageFeed';
 import MessageFilters, { defaultFilters, filterMessages } from './components/MessageFilters';
+import Pagination from './components/Pagination';
 import SuggestionInput from './components/SuggestionInput';
 
 const storageKey = 'private-chat.mongodb-uri';
@@ -31,6 +32,8 @@ export default function Home() {
   const [source, setSource] = useState('');
   const [articleTime, setArticleTime] = useState('');
   const [filters, setFilters] = useState(defaultFilters);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [editing, setEditing] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
@@ -108,6 +111,10 @@ export default function Home() {
     const timer = window.setTimeout(() => setToast(null), 3000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, mode, pageSize]);
 
   async function login(event) {
     event.preventDefault();
@@ -218,6 +225,9 @@ export default function Home() {
   }
 
   const filteredMessages = filterMessages(messages, filters);
+  const totalPages = Math.max(1, Math.ceil(filteredMessages.length / pageSize));
+  const visiblePage = Math.min(currentPage, totalPages);
+  const paginatedMessages = filteredMessages.slice((visiblePage - 1) * pageSize, visiblePage * pageSize);
   const authorSuggestions = [...new Set(messages.flatMap((message) => message.author))].sort((a, b) => a.localeCompare(b));
   const sourceSuggestions = [...new Set(messages.flatMap((message) => message.source))].sort((a, b) => a.localeCompare(b));
   const allMessagesCollapsed = filteredMessages.length > 0 && filteredMessages.every((message) => collapsedMessages.has(message.id));
@@ -319,7 +329,8 @@ export default function Home() {
               {mode === 'edit' && <button className="button button-danger-quiet" disabled={!messages.length} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>}
             </div>
           </div>
-          {mode === 'read' ? <ArticleCards messages={filteredMessages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={filteredMessages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
+          {mode === 'read' ? <ArticleCards messages={paginatedMessages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={paginatedMessages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
+          <Pagination currentPage={visiblePage} pageSize={pageSize} totalItems={filteredMessages.length} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
         </section>
       </main>
 
