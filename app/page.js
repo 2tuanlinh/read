@@ -30,7 +30,9 @@ export default function Home() {
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [authorSuggestions, setAuthorSuggestions] = useState([]);
   const [sourceSuggestions, setSourceSuggestions] = useState([]);
+  const [categorySuggestions, setCategorySuggestions] = useState([]);
   const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
   const [draft, setDraft] = useState('');
   const [author, setAuthor] = useState('');
   const [source, setSource] = useState('');
@@ -40,6 +42,7 @@ export default function Home() {
   const [pageSize, setPageSize] = useState(10);
   const [editing, setEditing] = useState(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState('');
   const [editText, setEditText] = useState('');
   const [editArticleTime, setEditArticleTime] = useState('');
   const [openMenu, setOpenMenu] = useState(null);
@@ -80,6 +83,7 @@ export default function Home() {
       setFilteredTotal(result.pagination?.total || 0);
       setAuthorSuggestions(result.suggestions?.authors || []);
       setSourceSuggestions(result.suggestions?.sources || []);
+      setCategorySuggestions(result.suggestions?.categories || []);
       if (result.pagination && page > result.pagination.totalPages) setCurrentPage(result.pagination.totalPages);
       setLastSynced(new Date());
       setSyncState('success');
@@ -115,6 +119,7 @@ export default function Home() {
 
   function changeMode(nextMode) {
     setMode(nextMode);
+    if (nextMode === 'edit') setFilters((current) => ({ ...current, category: '' }));
     setEditing(null);
     setOpenMenu(null);
     localStorage.setItem(modeStorageKey, nextMode);
@@ -163,6 +168,7 @@ export default function Home() {
     setTotalMessages(0);
     setFilteredTotal(0);
     setTitle('');
+    setCategory('');
     setDraft('');
     setFilters(defaultFilters);
     setEditing(null);
@@ -188,8 +194,9 @@ export default function Home() {
     const text = draft.trim();
     if (!text) return;
     await run('create', async () => {
-      await api('/api/messages', { method: 'POST', body: JSON.stringify({ title, text, author, source, articleTime }) });
+      await api('/api/messages', { method: 'POST', body: JSON.stringify({ title, category, text, author, source, articleTime }) });
       setTitle('');
+      setCategory('');
       setDraft('');
       if (currentPage !== 1) setCurrentPage(1);
       else await loadMessages(uri, true, 1);
@@ -200,7 +207,7 @@ export default function Home() {
     const text = editText.trim();
     if (!text) return;
     await run(`edit-${id}`, async () => {
-      const result = await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ title: editTitle, text, articleTime: editArticleTime }) });
+      await api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ title: editTitle, category: editCategory, text, articleTime: editArticleTime }) });
       setEditing(null);
       await loadMessages(uri, true);
     }, 'Message updated');
@@ -321,6 +328,7 @@ export default function Home() {
 
         {mode === 'edit' && <form className="composer" onSubmit={createMessage}>
           <input className="composer-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Article title (optional)" />
+          <input className="composer-title composer-category" value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Category (optional)" />
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
@@ -336,7 +344,7 @@ export default function Home() {
         </form>}
 
         <section className="message-section">
-          <MessageFilters filters={filters} setFilters={setFilters} authors={authorSuggestions} sources={sourceSuggestions} shown={filteredTotal} total={totalMessages} />
+          <MessageFilters filters={filters} setFilters={setFilters} authors={authorSuggestions} sources={sourceSuggestions} categories={categorySuggestions} showCategory={mode === 'read'} shown={filteredTotal} total={totalMessages} />
           <div className="toolbar">
             <span className="toolbar-label">{filteredTotal} {filteredTotal === 1 ? (mode === 'read' ? 'article' : 'result') : (mode === 'read' ? 'articles' : 'results')}</span>
             <div className="toolbar-actions">
@@ -344,7 +352,7 @@ export default function Home() {
               {mode === 'edit' && <button className="button button-danger-quiet" disabled={!totalMessages} onClick={() => setPendingDelete('all')}><Icon name="trash" />Delete all</button>}
             </div>
           </div>
-          {mode === 'read' ? <ArticleCards messages={messages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={messages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
+          {mode === 'read' ? <ArticleCards messages={messages} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} /> : <MessageFeed messages={messages} collapsedMessages={collapsedMessages} busy={busy} editing={editing} editTitle={editTitle} editCategory={editCategory} editText={editText} editArticleTime={editArticleTime} openMenu={openMenu} setEditing={setEditing} setEditTitle={setEditTitle} setEditCategory={setEditCategory} setEditText={setEditText} setEditArticleTime={setEditArticleTime} setOpenMenu={setOpenMenu} toggleMessage={toggleMessage} saveEdit={saveEdit} setReadStatus={setReadStatus} setPendingDelete={setPendingDelete} hasFilters={JSON.stringify(filters) !== JSON.stringify(defaultFilters)} />}
           <Pagination currentPage={visiblePage} pageSize={pageSize} totalItems={filteredTotal} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
         </section>
       </main>

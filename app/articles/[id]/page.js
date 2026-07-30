@@ -84,7 +84,7 @@ export default function ArticlePage() {
     <main className="article-reader">
       <article>
         {error && <div className="alert reader-alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><Icon name="close" /></button></div>}
-        <div className="reader-meta-top"><span>{article.source[0] || 'Article'}</span><time>{dateLabel(article.articleTime || article.createdAt)}</time></div>
+        <div className="reader-meta-top"><span>{article.category || article.source[0] || 'Article'}</span><time>{dateLabel(article.articleTime || article.createdAt)}</time></div>
         <h1>{articleHeading(article)}</h1>
         {(article.author.length || article.source.length) && <div className="reader-byline">{article.author.length > 0 && <span>By {article.author.join(', ')}</span>}{article.source.length > 0 && <span>From {article.source.join(', ')}</span>}</div>}
         <div className="article-body">{paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>

@@ -21,7 +21,7 @@ export default function ArticleCards({ messages, hasFilters }) {
   return <div className="article-grid">
     {messages.map((message) => <Link className={`article-card${message.isRead ? '' : ' unread'}`} href={`/articles/${message.id}`} key={message.id}>
       <div className="article-card-top">
-        <span className="article-kicker">{message.source[0] || 'Article'}</span>
+        <span className="article-kicker">{message.category || message.source[0] || 'Article'}</span>
         {!message.isRead && <span className="unread-label">Unread</span>}
       </div>
       <h2>{articleHeading(message)}</h2>

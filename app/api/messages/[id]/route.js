@@ -9,9 +9,12 @@ export async function GET(request, { params }) {
       if (!message) {
         throw new ApiError('Message not found.', 404);
       }
-      if (!Object.hasOwn(message, 'title')) {
-        await messages.updateOne({ _id: objectId }, { $set: { title: '' } });
-        message.title = '';
+      const missingFields = {};
+      if (!Object.hasOwn(message, 'title')) missingFields.title = '';
+      if (!Object.hasOwn(message, 'category')) missingFields.category = null;
+      if (Object.keys(missingFields).length) {
+        await messages.updateOne({ _id: objectId }, { $set: missingFields });
+        Object.assign(message, missingFields);
       }
       return Response.json({ message: mapMessage(message) });
     });
@@ -28,6 +31,9 @@ export async function PATCH(request, { params }) {
     const updates = {};
     if (Object.hasOwn(body, 'title')) {
       updates.title = normalizeText(body.title).trim();
+    }
+    if (Object.hasOwn(body, 'category')) {
+      updates.category = normalizeText(body.category).trim() || null;
     }
     if (Object.hasOwn(body, 'text')) {
       const text = normalizeText(body.text).trim();

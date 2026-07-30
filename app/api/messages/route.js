@@ -13,13 +13,17 @@ export async function GET(request) {
     const query = normalizeText(searchParams.get('query')).trim();
     const author = normalizeText(searchParams.get('author')).trim();
     const source = normalizeText(searchParams.get('source')).trim();
+    const category = normalizeText(searchParams.get('category')).trim();
     const status = searchParams.get('status');
     const order = searchParams.get('order') === 'oldest' ? 1 : -1;
     const from = searchParams.get('from');
     const to = searchParams.get('to');
 
     return await withMessages(request, async (messages) => {
-      await messages.updateMany({ title: { $exists: false } }, { $set: { title: '' } });
+      await Promise.all([
+        messages.updateMany({ title: { $exists: false } }, { $set: { title: '' } }),
+        messages.updateMany({ category: { $exists: false } }, { $set: { category: null } })
+      ]);
       const filters = [];
       if (query) {
         const expression = new RegExp(escapeRegex(query), 'i');
@@ -27,6 +31,7 @@ export async function GET(request) {
       }
       if (author) filters.push({ author: new RegExp(escapeRegex(author), 'i') });
       if (source) filters.push({ source: new RegExp(escapeRegex(source), 'i') });
+      if (category) filters.push({ category });
       if (status === 'read') filters.push({ isRead: true });
       if (status === 'unread') filters.push({ isRead: { $ne: true } });
       if (from || to) {
@@ -37,7 +42,7 @@ export async function GET(request) {
         filters.push({ articleTime });
       }
       const match = filters.length ? { $and: filters } : {};
-      const [documents, total, totalMessages, authors, sources] = await Promise.all([
+      const [documents, total, totalMessages, authors, sources, categories] = await Promise.all([
         messages.aggregate([
           { $match: match },
           { $set: { _hasArticleTime: { $cond: [{ $eq: [{ $type: '$articleTime' }, 'date'] }, 1, 0] } } },
@@ -49,13 +54,18 @@ export async function GET(request) {
         messages.countDocuments(match),
         messages.estimatedDocumentCount(),
         messages.distinct('author'),
-        messages.distinct('source')
+        messages.distinct('source'),
+        messages.distinct('category', { category: { $type: 'string', $ne: '' } })
       ]);
       return Response.json({
         messages: documents.map(mapMessage),
         pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
         totalMessages,
-        suggestions: { authors: authors.filter((value) => typeof value === 'string'), sources: sources.filter((value) => typeof value === 'string') }
+        suggestions: {
+          authors: authors.filter((value) => typeof value === 'string'),
+          sources: sources.filter((value) => typeof value === 'string'),
+          categories: categories.filter((value) => typeof value === 'string').sort((left, right) => left.localeCompare(right))
+        }
       });
     });
   } catch (error) {
@@ -67,6 +77,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const title = normalizeText(body.title).trim();
+    const category = normalizeText(body.category).trim() || null;
     const text = normalizeText(body.text).trim();
     if (!text) {
       throw new ApiError('Message text is required.', 400);
@@ -74,7 +85,7 @@ export async function POST(request) {
 
     const metadata = parseMetadata(body);
     return await withMessages(request, async (messages) => {
-      const document = { _id: new ObjectId(), title, text, ...metadata, isRead: false, createdAt: new Date() };
+      const document = { _id: new ObjectId(), title, category, text, ...metadata, isRead: false, createdAt: new Date() };
       await messages.insertOne(document);
       return Response.json({ message: mapMessage(document) }, { status: 201 });
     });
